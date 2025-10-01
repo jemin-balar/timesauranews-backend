@@ -1420,7 +1420,7 @@ const getArticleDetail = async (req, res) => {
 const getRelatedArticles = async (req, res) => {
     try {
         const { id } = req.params;
-        const { limit = 2 } = req.query;
+        const { limit = 3 } = req.query;
         
         info('Related articles API request received', { id, limit });
 
@@ -1450,6 +1450,10 @@ const getRelatedArticles = async (req, res) => {
                 }
             }
         }
+        
+        // Remove duplicates from all articles to prevent same articles appearing multiple times
+        allArticles = removeDuplicates(allArticles);
+        debug(`Total unique articles after deduplication: ${allArticles.length}`);
 
         if (!originalArticle) {
             return error({
@@ -1491,11 +1495,24 @@ const getRelatedArticles = async (req, res) => {
  */
 const findRelatedArticles = (originalArticle, allArticles, limit) => {
     try {
-        // Filter out the original article
+        // Filter out the original article and remove duplicates by link
         const otherArticles = allArticles.filter(article => article.id !== originalArticle.id);
         
+        // Additional deduplication by link to prevent same articles with different IDs
+        const uniqueArticles = [];
+        const seenLinks = new Set();
+        
+        for (const article of otherArticles) {
+            if (!seenLinks.has(article.link)) {
+                seenLinks.add(article.link);
+                uniqueArticles.push(article);
+            }
+        }
+        
+        debug(`Found ${uniqueArticles.length} unique articles for related articles`);
+        
         // Calculate similarity scores for each article
-        const articlesWithScores = otherArticles.map(article => {
+        const articlesWithScores = uniqueArticles.map(article => {
             const similarityScore = calculateArticleSimilarity(originalArticle, article);
             return {
                 ...article,

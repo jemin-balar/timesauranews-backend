@@ -3,7 +3,8 @@ const { error } = require('../common/res.common');
 const { http_codes, messages } = require('../constant/text.constant');
 // const { sign } = require("jsonwebtoken");
 // const { hash, compare } = require("bcrypt");
-// const axios = require('axios');
+const axios = require('axios');
+const cheerio = require('cheerio');
 // const { SECRET_KEY, PDF_TO_PPTX_API_URL } = process.env
 
 const checkMissingParameters = (
@@ -42,7 +43,21 @@ const checkMissingParameters = (
     }
 };
 
+const  getGoogleNewsImage = async (articleUrl) => {
+    try {
+      const { data } = await axios.get(articleUrl);
+      const $ = cheerio.load(data);
+      const imageUrl = $('meta[property="og:image"]').attr("content");
+      return imageUrl || null;
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }
+  
+
 
 module.exports = {
-    checkMissingParameters
+    checkMissingParameters,
+    getGoogleNewsImage
 }
