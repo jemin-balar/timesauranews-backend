@@ -149,18 +149,33 @@ curl -X GET "http://localhost:3000/api/v1/news/article/mg7jmwio-u096ax/related?l
 
 ### 5. Latest Articles API
 ```bash
-# Get latest articles (default limit: 6)
+# Get latest articles from all categories (default limit: 6)
 curl -X GET "http://localhost:3000/api/v1/news/latest"
 
 # Get latest articles with custom limit
 curl -X GET "http://localhost:3000/api/v1/news/latest?limit=10"
 
-# Get more latest articles
-curl -X GET "http://localhost:3000/api/v1/news/latest?limit=15"
+# Get latest articles from specific category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=business"
 
-# Test with different limits
-curl -X GET "http://localhost:3000/api/v1/news/latest?limit=3"
-curl -X GET "http://localhost:3000/api/v1/news/latest?limit=12"
+# Get latest articles from technology category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=technology"
+
+# Get latest articles from finance category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=finance"
+
+# Get latest articles from marketing category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=marketing"
+
+# Get latest articles from leadership category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=leadership"
+
+# Get latest articles from startups category
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=startups"
+
+# Combine category and limit
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=business&limit=8"
+curl -X GET "http://localhost:3000/api/v1/news/latest?category=technology&limit=4"
 ```
 
 ### 6. Get News with Category

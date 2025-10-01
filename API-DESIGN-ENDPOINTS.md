@@ -185,9 +185,10 @@ When using the Article Details API with breaking news IDs, use these category ma
 
 ### 5. Latest Articles
 **Endpoint:** `GET /api/v1/news/latest`
-**Description:** Get latest articles from all categories for grid display
+**Description:** Get latest articles from all categories or specific category for grid display
 **Query Parameters:**
 - `limit` (optional): Number of articles (default: 6)
+- `category` (optional): Filter by specific category (business, technology, finance, marketing, leadership, startups)
 
 **Response Format:**
 ```json

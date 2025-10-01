@@ -714,24 +714,57 @@ const getFeaturedArticle = async (req, res) => {
  */
 const getLatestArticles = async (req, res) => {
     try {
-        const { limit = 6 } = req.query;
+        const { limit = 6, category } = req.query;
         
-        info('Latest articles API request received', { limit });
+        info('Latest articles API request received', { limit, category });
 
-        // Fetch from design-specific categories only (same as breaking news)
-        const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
         let allArticles = [];
         
-        // Fetch from each category individually to maintain proper category assignment
-        for (const category of designCategories) {
+        if (category) {
+            // Validate category
+            const validCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+            if (!validCategories.includes(category)) {
+                return error({
+                    code: http_codes.badRequest,
+                    msg: `Invalid category. Available categories: ${validCategories.join(', ')}`,
+                    res,
+                    method: 'getLatestArticles'
+                });
+            }
+            
+            // Fetch from specific category
             const feedUrl = googleNewsFeeds[category];
             if (feedUrl) {
                 try {
                     const articles = await fetchFeed(feedUrl, category);
-                    allArticles.push(...articles);
+                    allArticles = articles;
                     debug(`Fetched ${articles.length} articles from ${category}`);
                 } catch (err) {
                     warn('Failed to fetch from category for latest articles', { category, error: err.message });
+                    return error({
+                        code: http_codes.internalError,
+                        msg: `Failed to fetch latest articles for category: ${category}`,
+                        res,
+                        error: err,
+                        method: 'getLatestArticles'
+                    });
+                }
+            }
+        } else {
+            // Fetch from all design-specific categories (default behavior)
+            const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+            
+            // Fetch from each category individually to maintain proper category assignment
+            for (const cat of designCategories) {
+                const feedUrl = googleNewsFeeds[cat];
+                if (feedUrl) {
+                    try {
+                        const articles = await fetchFeed(feedUrl, cat);
+                        allArticles.push(...articles);
+                        debug(`Fetched ${articles.length} articles from ${cat}`);
+                    } catch (err) {
+                        warn('Failed to fetch from category for latest articles', { category: cat, error: err.message });
+                    }
                 }
             }
         }
