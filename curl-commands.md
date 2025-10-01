@@ -37,7 +37,133 @@ curl -X GET "http://localhost:3000/api/health"
 curl -X GET "http://localhost:3000/api/v1/news"
 ```
 
-### 5. Get News with Category
+## Design-Specific Endpoints
+
+### 4.1. Breaking News Carousel
+```bash
+# Get breaking news (mixed categories)
+curl -X GET "http://localhost:3000/api/v1/news/breaking"
+
+# Get breaking news with limit
+curl -X GET "http://localhost:3000/api/v1/news/breaking?limit=6"
+
+# Get breaking news for specific category - Business
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=business"
+
+# Get breaking news for specific category - Technology
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=technology"
+
+# Get breaking news for specific category - Finance
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=finance"
+
+# Get breaking news for specific category - Marketing
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=marketing"
+
+# Get breaking news for specific category - Leadership
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=leadership"
+
+# Get breaking news for specific category - Startups
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=startups"
+
+# Get breaking news with category and limit
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=business&limit=8"
+
+# Test invalid category (should return error)
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=health"
+```
+
+### 4.2. Article Details API
+```bash
+# Get article detail by breaking news ID (from breaking news list)
+# First get breaking news to get an ID, then use it here
+curl -X GET "http://localhost:3000/api/v1/news/breaking?category=business&limit=1"
+
+# Then use the unique ID from the response:
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID_FROM_RESPONSE]"
+
+# Get article detail with category context (recommended for breaking news)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=business"
+
+# Get article detail with category context for technology
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=technology"
+
+# Get article detail with category context for finance (specific finance RSS)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=finance"
+
+# Get article detail with category context for marketing (specific marketing RSS)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=marketing"
+
+# Get article detail with category context for leadership (specific leadership RSS)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=leadership"
+
+# Get article detail with category context for startups (specific startup RSS)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]?category=startups"
+
+# Get article detail without category (searches all feeds automatically)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]"
+
+# Example: For your specific article
+# Breaking news shows: "category": "LEADERSHIP"
+# Use in article details: ?category=leadership (will show LEADERSHIP in response)
+curl -X GET "http://localhost:3000/api/v1/news/article/mg7jmwio-u096ax?category=leadership"
+```
+
+### 4.3. Related Articles API
+```bash
+# Get related articles for a specific article ID (content-based matching)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]/related"
+
+# Get related articles with custom limit (default is 2)
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]/related?limit=4"
+
+# Get related articles with more results
+curl -X GET "http://localhost:3000/api/v1/news/article/[UNIQUE_ID]/related?limit=6"
+
+# Example with your specific article ID
+curl -X GET "http://localhost:3000/api/v1/news/article/mg7jmwio-u096ax/related?limit=3"
+
+# Example with another article ID
+curl -X GET "http://localhost:3000/api/v1/news/article/mg7flyxc-axdkbf/related?limit=4"
+
+# Test with different limits
+curl -X GET "http://localhost:3000/api/v1/news/article/mg7jmwio-u096ax/related?limit=1"
+curl -X GET "http://localhost:3000/api/v1/news/article/mg7jmwio-u096ax/related?limit=5"
+
+# Response will include category field for article details API:
+# {
+#   "code": 200,
+#   "message": "Related articles fetched successfully",
+#   "data": [
+#     {
+#       "id": "unique-id-1",
+#       "image": "https://picsum.photos/300/200?random=123",
+#       "category": "BUSINESS",
+#       "title": "Related Article Title",
+#       "publishedAt": "2025-10-01T05:26:12.000Z",
+#       "link": "https://news.google.com/rss/articles/...",
+#       "source": "news.google.com"
+#     }
+#   ]
+# }
+```
+
+### 5. Latest Articles API
+```bash
+# Get latest articles (default limit: 6)
+curl -X GET "http://localhost:3000/api/v1/news/latest"
+
+# Get latest articles with custom limit
+curl -X GET "http://localhost:3000/api/v1/news/latest?limit=10"
+
+# Get more latest articles
+curl -X GET "http://localhost:3000/api/v1/news/latest?limit=15"
+
+# Test with different limits
+curl -X GET "http://localhost:3000/api/v1/news/latest?limit=3"
+curl -X GET "http://localhost:3000/api/v1/news/latest?limit=12"
+```
+
+### 6. Get News with Category
 ```bash
 # Technology news
 curl -X GET "http://localhost:3000/api/v1/news?category=technology"

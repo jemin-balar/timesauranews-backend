@@ -45,7 +45,13 @@ const googleNewsFeeds = {
     health: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=m',
     sports: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=s',
     entertainment: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=e',
-    science: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=snc'
+    science: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=snc',
+    
+    // Design-specific categories with different RSS feeds for better differentiation
+    finance: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=b&q=finance+economy+stock+market',
+    marketing: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=b&q=marketing+advertising+brand',
+    leadership: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=b&q=leadership+management+CEO',
+    startups: 'https://news.google.com/rss?hl=en&gl=US&ceid=US:en&topic=tc&q=startup+entrepreneur+venture'
 }
 
 module.exports = {

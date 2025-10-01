@@ -170,7 +170,11 @@ const fetchFeed = async (url, category = newsConstants.defaultCategory) => {
  */
 const formatArticle = (item, category = newsConstants.defaultCategory) => {
     try {
+        // Extract Google News unique ID from the link or guid
+        const googleNewsId = extractGoogleNewsId(item);
+        
         const article = {
+            id: googleNewsId,
             title: cleanText(item.title || ''),
             link: item.link || '',
             summary: cleanText(item.contentSnippet || item.content || item.description || ''),
@@ -360,6 +364,39 @@ const extractThumbnail = (item) => {
 };
 
 /**
+ * Extract Google News unique ID from RSS item
+ * @param {Object} item - RSS item
+ * @returns {string} - Google News unique ID
+ */
+const extractGoogleNewsId = (item) => {
+    try {
+        // Create a truly unique ID by combining multiple factors
+        const title = item.title || '';
+        const link = item.link || '';
+        const pubDate = item.pubDate || item.isoDate || new Date().toISOString();
+        const source = extractSource(link);
+        
+        // Create a unique string combining all available data
+        const uniqueString = `${title}-${link}-${pubDate}-${source}`;
+        const hash = createSimpleHash(uniqueString);
+        
+        // Create a shorter, more readable ID with timestamp
+        const timestamp = new Date(pubDate).getTime().toString(36);
+        const shortHash = hash.toString(36).substring(0, 8);
+        
+        // Return a unique ID that combines timestamp and hash
+        return `${timestamp}-${shortHash}`;
+        
+    } catch (err) {
+        debug('Failed to extract Google News ID', { error: err.message, item: item.title });
+        // Fallback: use current timestamp with random component
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substring(2, 8);
+        return `${timestamp}-${random}`;
+    }
+};
+
+/**
  * Extract source from article link
  * @param {string} link - Article link
  * @returns {string} - Source name
@@ -468,39 +505,107 @@ const sortArticles = (articles, order = newsConstants.sortOrder) => {
 /**
  * Get breaking news for carousel
  * GET /api/v1/news/breaking
+ * Query parameters:
+ * - limit: Number of articles (optional, default: 4)
+ * - category: Filter by specific category (optional)
  */
 const getBreakingNews = async (req, res) => {
     try {
-        const { limit = 4 } = req.query;
+        const { limit = 4, category } = req.query;
         
-        info('Breaking news API request received', { limit });
+        info('Breaking news API request received', { limit, category });
 
-        // Fetch news only from specific design categories
-        const designCategories = ['business', 'technology'];
-        const allArticles = [];
+        let allArticles = [];
         
-        // Fetch from each design category separately to maintain category information
-        for (const category of designCategories) {
-            const feedUrl = googleNewsFeeds[category];
+        // If category is specified, fetch only from that category
+        if (category) {
+            // Validate category - only allow design-specific categories
+            const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+            if (!designCategories.includes(category)) {
+                return error({
+                    code: http_codes.badRequest,
+                    msg: `Invalid category. Available categories: ${designCategories.join(', ')}`,
+                    res,
+                    method: 'getBreakingNews'
+                });
+            }
+            
+            // Map design categories to specific RSS feeds for better differentiation
+            let feedUrl = '';
+            switch (category) {
+                case 'business':
+                    feedUrl = googleNewsFeeds.business;
+                    break;
+                case 'technology':
+                    feedUrl = googleNewsFeeds.technology;
+                    break;
+                case 'finance':
+                    feedUrl = googleNewsFeeds.finance; // Specific finance RSS feed
+                    break;
+                case 'marketing':
+                    feedUrl = googleNewsFeeds.marketing; // Specific marketing RSS feed
+                    break;
+                case 'leadership':
+                    feedUrl = googleNewsFeeds.leadership; // Specific leadership RSS feed
+                    break;
+                case 'startups':
+                    feedUrl = googleNewsFeeds.startups; // Specific startup RSS feed
+                    break;
+                default:
+                    feedUrl = googleNewsFeeds.business;
+            }
+            
             if (feedUrl) {
                 try {
                     const articles = await fetchFeed(feedUrl, category);
-                    allArticles.push(...articles);
+                    allArticles = articles;
                 } catch (err) {
                     warn('Failed to fetch from category', { category, error: err.message });
+                    return error({
+                        code: http_codes.internalError,
+                        msg: `Failed to fetch breaking news for category: ${category}`,
+                        res,
+                        error: err,
+                        method: 'getBreakingNews'
+                    });
+                }
+            }
+        } else {
+            // Default behavior: fetch from all available categories for variety
+            const designCategories = ['business', 'technology'];
+            
+            // Fetch from each design category separately
+            for (const cat of designCategories) {
+                const feedUrl = googleNewsFeeds[cat];
+                if (feedUrl) {
+                    try {
+                        const articles = await fetchFeed(feedUrl, cat);
+                        allArticles.push(...articles);
+                    } catch (err) {
+                        warn('Failed to fetch from category', { category: cat, error: err.message });
+                    }
                 }
             }
         }
         
+        // Remove duplicates based on link and title
+        const uniqueArticles = removeDuplicates(allArticles);
+        
         // Sort by date and limit
-        const articles = allArticles
+        const articles = uniqueArticles
             .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
             .slice(0, parseInt(limit));
 
         // Format for carousel display with proper category mapping
-        const formattedArticles = articles.map((article, index) => {
+        const formattedArticles = articles.map((article) => {
             // Map RSS categories to design categories
             let displayCategory = article.category.toUpperCase();
+            
+            // If a specific category was requested, use it directly
+            if (category) {
+                displayCategory = category.toUpperCase();
+            } else {
+                // Default mapping for mixed categories
             if (article.category === 'business') {
                 // Randomly assign business articles to different design categories
                 const businessCategories = ['BUSINESS', 'FINANCE', 'MARKETING', 'LEADERSHIP'];
@@ -509,10 +614,11 @@ const getBreakingNews = async (req, res) => {
                 // Randomly assign technology articles to tech/startup categories
                 const techCategories = ['TECHNOLOGY', 'STARTUPS'];
                 displayCategory = techCategories[Math.floor(Math.random() * techCategories.length)];
+                }
             }
             
             return {
-                id: `breaking-${index + 1}`,
+                id: article.id,
                 image: article.thumbnail,
                 category: displayCategory,
                 title: article.title,
@@ -527,6 +633,7 @@ const getBreakingNews = async (req, res) => {
             data: {
                 breakingNews: formattedArticles,
                 total: formattedArticles.length,
+                category: category || 'mixed',
                 lastUpdated: new Date().toISOString()
             },
             msg: 'Breaking news fetched successfully',
@@ -611,24 +718,37 @@ const getLatestArticles = async (req, res) => {
         
         info('Latest articles API request received', { limit });
 
-        // Fetch from all available categories
-        const categories = Object.keys(googleNewsFeeds);
-        const feedUrls = categories.map(cat => googleNewsFeeds[cat]).filter(Boolean);
+        // Fetch from design-specific categories only (same as breaking news)
+        const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+        let allArticles = [];
         
-        const articles = await fetchNews(feedUrls, {
-            limit: parseInt(limit),
-            useCache: true,
-            sort: 'desc'
-        });
+        // Fetch from each category individually to maintain proper category assignment
+        for (const category of designCategories) {
+            const feedUrl = googleNewsFeeds[category];
+            if (feedUrl) {
+                try {
+                    const articles = await fetchFeed(feedUrl, category);
+                    allArticles.push(...articles);
+                    debug(`Fetched ${articles.length} articles from ${category}`);
+                } catch (err) {
+                    warn('Failed to fetch from category for latest articles', { category, error: err.message });
+                }
+            }
+        }
+        
+        // Remove duplicates and sort
+        const uniqueArticles = removeDuplicates(allArticles);
+        const sortedArticles = sortArticles(uniqueArticles);
+        
+        // Limit results
+        const articles = sortedArticles.slice(0, parseInt(limit));
 
-        // Format for grid display
-        const formattedArticles = articles.map((article, index) => ({
-            id: `latest-${index + 1}`,
+        // Format like breaking news API with proper unique IDs and category
+        const formattedArticles = articles.map((article) => ({
+            id: article.id,
             image: article.thumbnail,
             category: article.category.toUpperCase(),
             title: article.title,
-            description: truncateText(article.summary, 100),
-            author: article.source,
             publishedAt: article.publishedAt,
             link: article.link,
             source: article.source
@@ -636,10 +756,7 @@ const getLatestArticles = async (req, res) => {
 
         return success({
             code: http_codes.ok,
-            data: {
-                latestArticles: formattedArticles,
-                total: formattedArticles.length
-            },
+            data: formattedArticles,
             msg: 'Latest articles fetched successfully',
             res
         });
@@ -908,18 +1025,80 @@ const getArticleDetail = async (req, res) => {
         // If ID is provided, fetch from the same source as the original API
         let article = null;
         
-        // Check if it's a breaking news ID
-        if (id.startsWith('breaking-')) {
-            const breakingIndex = parseInt(id.split('-')[1]) - 1;
-            // Use the exact same feed URLs as the breaking news API
-            const categories = Object.keys(googleNewsFeeds);
-            const feedUrls = categories.map(cat => googleNewsFeeds[cat]).filter(Boolean);
-            const breakingArticles = await fetchNews(feedUrls, {
-                limit: 20,
-                useCache: true,
-                sort: 'desc'
-            });
-            article = breakingArticles[breakingIndex];
+        // Check if it's a Google News ID (not starting with breaking- but is a Google News ID)
+        // We'll try to find the article by ID in all available feeds
+        if (!id.startsWith('latest-') && !id.startsWith('featured-') && !id.startsWith('more-') && !id.startsWith('trending-') && !id.startsWith('sidebar-latest-')) {
+            // This is likely a Google News ID from breaking news
+            let allArticles = [];
+            
+            // Check if there's a category parameter in the request to match the breaking news logic
+            const { category } = req.query;
+            
+            if (category) {
+                // Map display categories to specific RSS feeds for better differentiation
+                const categoryMapping = {
+                    'business': 'business',
+                    'technology': 'technology', 
+                    'finance': 'finance',      // Finance articles from specific finance feed
+                    'marketing': 'marketing',   // Marketing articles from specific marketing feed
+                    'leadership': 'leadership', // Leadership articles from specific leadership feed
+                    'startups': 'startups'     // Startup articles from specific startup feed
+                };
+                
+                const rssCategory = categoryMapping[category] || 'business';
+                const feedUrl = googleNewsFeeds[rssCategory];
+                
+                if (feedUrl) {
+                    try {
+                        allArticles = await fetchFeed(feedUrl, rssCategory);
+                    } catch (err) {
+                        warn('Failed to fetch from specific category', { category: rssCategory, error: err.message });
+                    }
+                }
+            }
+            
+            // Find the article with matching Google News ID in specific category first
+            article = allArticles.find(art => art.id === id);
+            
+            if (article) {
+                info('Article found in specific category', { id, category, foundIn: category });
+            } else {
+                info('Article not found in specific category, searching all feeds', { id, category });
+                
+                // Search across all available feeds
+                const allFeedCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+                
+                for (const feedCategory of allFeedCategories) {
+                    const feedUrl = googleNewsFeeds[feedCategory];
+                    if (feedUrl) {
+                        try {
+                            const articles = await fetchFeed(feedUrl, feedCategory);
+                            allArticles.push(...articles);
+                            debug(`Fetched ${articles.length} articles from ${feedCategory}`);
+                        } catch (err) {
+                            warn('Failed to fetch from feed in article detail', { feedCategory, error: err.message });
+                        }
+                    }
+                }
+                
+                // Find the article with matching Google News ID across all feeds
+                article = allArticles.find(art => art.id === id);
+                
+                if (article) {
+                    info('Article found in all feeds search', { id, totalArticles: allArticles.length });
+                } else {
+                    warn('Article not found in any feed', { id, totalArticles: allArticles.length });
+                }
+            }
+            
+            if (!article) {
+                return error({
+                    code: http_codes.notFound,
+                    msg: 'Article not found in any feed',
+                    res,
+                    method: 'getArticleDetail'
+                });
+            }
         }
         // Check if it's a latest articles ID
         else if (id.startsWith('latest-')) {
@@ -995,13 +1174,21 @@ const getArticleDetail = async (req, res) => {
             });
         }
 
+        // Determine the display category based on the request context
+        let displayCategory = article.category.toUpperCase();
+        
+        // If category was passed in query, use that for consistency
+        if (req.query.category) {
+            displayCategory = req.query.category.toUpperCase();
+        }
+        
         const articleDetail = {
             id: id,
             title: article.title,
             description: article.summary,
             content: article.content || article.summary,
             image: article.thumbnail,
-            category: article.category.toUpperCase(),
+            category: displayCategory,
             author: {
                 name: article.source,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(article.source)}&background=4A90E2&color=fff&size=40`
@@ -1045,34 +1232,48 @@ const getRelatedArticles = async (req, res) => {
         
         info('Related articles API request received', { id, limit });
 
-        // Fetch articles from multiple categories for variety
-        const categories = Object.keys(googleNewsFeeds);
-        const feedUrls = categories.map(cat => googleNewsFeeds[cat]).filter(Boolean);
+        // First, find the original article to understand its characteristics
+        let originalArticle = null;
+        let allArticles = [];
         
-        const articles = await fetchNews(feedUrls, {
-            limit: parseInt(limit) + 2, // Get extra to filter out the current article
-            useCache: true,
-            sort: 'desc'
-        });
+        // Search for the original article across all feeds using specific feed URLs
+        const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+        
+        for (const category of designCategories) {
+            const feedUrl = googleNewsFeeds[category];
+            
+            if (feedUrl) {
+                try {
+                    const articles = await fetchFeed(feedUrl, category);
+                    allArticles.push(...articles);
+                    
+                    // Find the original article
+                    if (!originalArticle) {
+                        originalArticle = articles.find(article => article.id === id);
+                    }
+                    
+                    debug(`Fetched ${articles.length} articles from ${category} for related articles`);
+                } catch (err) {
+                    warn('Failed to fetch from category for related articles', { category, error: err.message });
+                }
+            }
+        }
 
-        const relatedArticles = articles.slice(0, parseInt(limit)).map((article, index) => ({
-            id: `related-${index + 1}`,
-            title: article.title,
-            description: truncateText(article.summary, 80),
-            image: article.thumbnail,
-            author: article.source,
-            publishedAt: article.publishedAt,
-            link: article.link,
-            source: article.source,
-            readingTime: calculateReadingTime(article.content || article.summary)
-        }));
+        if (!originalArticle) {
+            return error({
+                code: http_codes.notFound,
+                msg: 'Original article not found',
+                res,
+                method: 'getRelatedArticles'
+            });
+        }
+
+        // Find related articles based on content similarity
+        const relatedArticles = findRelatedArticles(originalArticle, allArticles, parseInt(limit));
 
         return success({
             code: http_codes.ok,
-            data: {
-                relatedArticles: relatedArticles,
-                total: relatedArticles.length
-            },
+            data: relatedArticles,
             msg: 'Related articles fetched successfully',
             res
         });
@@ -1086,6 +1287,149 @@ const getRelatedArticles = async (req, res) => {
             error: err,
             method: 'getRelatedArticles'
         });
+    }
+};
+
+/**
+ * Find related articles based on content similarity
+ * @param {Object} originalArticle - The original article
+ * @param {Array} allArticles - All available articles
+ * @param {number} limit - Number of related articles to return
+ * @returns {Array} - Related articles with similarity scores
+ */
+const findRelatedArticles = (originalArticle, allArticles, limit) => {
+    try {
+        // Filter out the original article
+        const otherArticles = allArticles.filter(article => article.id !== originalArticle.id);
+        
+        // Calculate similarity scores for each article
+        const articlesWithScores = otherArticles.map(article => {
+            const similarityScore = calculateArticleSimilarity(originalArticle, article);
+            return {
+                ...article,
+                similarityScore
+            };
+        });
+        
+        // Sort by similarity score (highest first)
+        const sortedArticles = articlesWithScores.sort((a, b) => b.similarityScore - a.similarityScore);
+        
+        // Take the top related articles and format like breaking news API with category
+        const relatedArticles = sortedArticles.slice(0, limit).map((article) => ({
+            id: article.id,
+            image: article.thumbnail,
+            category: article.category.toUpperCase(),
+            title: article.title,
+            publishedAt: article.publishedAt,
+            link: article.link,
+            source: article.source
+        }));
+        
+        return relatedArticles;
+        
+    } catch (err) {
+        logError('Failed to find related articles', err, { originalArticle: originalArticle.title });
+        return [];
+    }
+};
+
+/**
+ * Calculate similarity between two articles
+ * @param {Object} article1 - First article
+ * @param {Object} article2 - Second article
+ * @returns {number} - Similarity score (0-1)
+ */
+const calculateArticleSimilarity = (article1, article2) => {
+    try {
+        let score = 0;
+        let factors = 0;
+        
+        // 1. Title similarity (40% weight)
+        const titleSimilarity = calculateTextSimilarity(article1.title, article2.title);
+        score += titleSimilarity * 0.4;
+        factors += 0.4;
+        
+        // 2. Summary/description similarity (30% weight)
+        const summarySimilarity = calculateTextSimilarity(article1.summary, article2.summary);
+        score += summarySimilarity * 0.3;
+        factors += 0.3;
+        
+        // 3. Source similarity (10% weight)
+        const sourceSimilarity = article1.source === article2.source ? 1 : 0;
+        score += sourceSimilarity * 0.1;
+        factors += 0.1;
+        
+        // 4. Category similarity (10% weight)
+        const categorySimilarity = article1.category === article2.category ? 1 : 0;
+        score += categorySimilarity * 0.1;
+        factors += 0.1;
+        
+        // 5. Keyword similarity (10% weight)
+        const keywordSimilarity = calculateKeywordSimilarity(article1.title, article2.title);
+        score += keywordSimilarity * 0.1;
+        factors += 0.1;
+        
+        return factors > 0 ? score / factors : 0;
+        
+    } catch (err) {
+        debug('Failed to calculate article similarity', { error: err.message });
+        return 0;
+    }
+};
+
+/**
+ * Calculate text similarity between two strings
+ * @param {string} text1 - First text
+ * @param {string} text2 - Second text
+ * @returns {number} - Similarity score (0-1)
+ */
+const calculateTextSimilarity = (text1, text2) => {
+    try {
+        if (!text1 || !text2) return 0;
+        
+        const words1 = text1.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+        const words2 = text2.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+        
+        if (words1.length === 0 || words2.length === 0) return 0;
+        
+        const commonWords = words1.filter(word => words2.includes(word));
+        const totalWords = new Set([...words1, ...words2]).size;
+        
+        return commonWords.length / totalWords;
+        
+    } catch (err) {
+        debug('Failed to calculate text similarity', { error: err.message });
+        return 0;
+    }
+};
+
+/**
+ * Calculate keyword similarity between two titles
+ * @param {string} title1 - First title
+ * @param {string} title2 - Second title
+ * @returns {number} - Similarity score (0-1)
+ */
+const calculateKeywordSimilarity = (title1, title2) => {
+    try {
+        if (!title1 || !title2) return 0;
+        
+        // Extract important keywords from titles
+        const keywords1 = extractKeywordsFromTitle(title1);
+        const keywords2 = extractKeywordsFromTitle(title2);
+        
+        if (keywords1.length === 0 || keywords2.length === 0) return 0;
+        
+        const commonKeywords = keywords1.filter(keyword => 
+            keywords2.some(kw => kw.includes(keyword) || keyword.includes(kw))
+        );
+        
+        const totalKeywords = new Set([...keywords1, ...keywords2]).size;
+        
+        return commonKeywords.length / totalKeywords;
+        
+    } catch (err) {
+        debug('Failed to calculate keyword similarity', { error: err.message });
+        return 0;
     }
 };
 
@@ -1242,6 +1586,7 @@ const createSimpleHash = (str) => {
     }
     return Math.abs(hash);
 };
+
 
 /**
  * Try to fetch image from article URL (async)
