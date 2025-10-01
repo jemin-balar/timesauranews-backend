@@ -181,7 +181,8 @@ const formatArticle = (item, category = newsConstants.defaultCategory) => {
             publishedAt: parseDate(item.pubDate || item.isoDate || new Date().toISOString()),
             source: extractSource(item.link || ''),
             thumbnail: extractThumbnail(item),
-            category: category
+            category: category,
+            author: extractAuthor(item)
         };
 
         return article;
@@ -189,6 +190,116 @@ const formatArticle = (item, category = newsConstants.defaultCategory) => {
     } catch (err) {
         logError('Failed to format article', err, { item });
         throw new Error(`Article formatting failed: ${err.message}`);
+    }
+};
+
+/**
+ * Extract author information from RSS item
+ * @param {Object} item - RSS item
+ * @returns {Object} - Author information with name and avatar
+ */
+const extractAuthor = (item) => {
+    try {
+        let authorName = '';
+        let authorAvatar = '';
+        
+        // Try to extract author from various RSS fields
+        if (item.creator) {
+            authorName = cleanText(item.creator);
+        } else if (item.author) {
+            authorName = cleanText(item.author);
+        } else if (item['dc:creator']) {
+            authorName = cleanText(item['dc:creator']);
+        } else if (item['media:credit']) {
+            authorName = cleanText(item['media:credit']);
+        } else {
+            // Try to extract author from content/description
+            const content = item.content || item.description || item.contentSnippet || '';
+            const authorMatch = content.match(/(?:by|written by|author|reporter|staff):\s*([^,\n\r<]+)/i);
+            if (authorMatch && authorMatch[1]) {
+                authorName = cleanText(authorMatch[1]);
+            } else {
+                // Try to extract from title if it contains author info
+                const title = item.title || '';
+                const titleAuthorMatch = title.match(/(?:by|written by|author):\s*([^,\n\r<]+)/i);
+                if (titleAuthorMatch && titleAuthorMatch[1]) {
+                    authorName = cleanText(titleAuthorMatch[1]);
+                } else {
+                    // Extract from Google News URL to get real source
+                    const articleUrl = item.link || '';
+                    if (articleUrl && articleUrl.includes('news.google.com')) {
+                        // Extract source from the redirect URL
+                        const urlMatch = articleUrl.match(/url=([^&]+)/);
+                        if (urlMatch && urlMatch[1]) {
+                            const decodedUrl = decodeURIComponent(urlMatch[1]);
+                            const domain = extractSource(decodedUrl);
+                            if (domain && domain !== 'news.google.com') {
+                                // Create a meaningful author name from the source
+                                const sourceName = domain.replace(/\.(com|org|net|co|io)$/i, '')
+                                    .replace(/[-_]/g, ' ')
+                                    .replace(/\b\w/g, l => l.toUpperCase());
+                                authorName = `${sourceName} Staff`;
+                            } else {
+                                authorName = 'News Reporter';
+                            }
+                        } else {
+                            authorName = 'News Reporter';
+                        }
+                    } else {
+                        // Use source domain for better author names
+                        const source = extractSource(item.link || '');
+                        if (source && source !== 'news.google.com') {
+                            const sourceName = source.replace(/\.(com|org|net|co|io)$/i, '')
+                                .replace(/[-_]/g, ' ')
+                                .replace(/\b\w/g, l => l.toUpperCase());
+                            authorName = `${sourceName} Staff`;
+                        } else {
+                            authorName = 'News Reporter';
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Clean up author name (remove common prefixes and suffixes)
+        authorName = authorName
+            .replace(/^By\s+/i, '')
+            .replace(/^Written by\s+/i, '')
+            .replace(/^Author:\s*/i, '')
+            .replace(/^Reporter:\s*/i, '')
+            .replace(/^Staff\s*/i, '')
+            .replace(/\s*,\s*.*$/, '') // Remove everything after comma
+            .replace(/\s*\(.*\)$/, '') // Remove parentheses content
+            .replace(/\s*\[.*\]$/, '') // Remove bracket content
+            .replace(/\s*<.*>$/, '') // Remove HTML tags
+            .trim();
+        
+        // If still empty or too short, use fallback
+        if (!authorName || authorName.length < 2) {
+            authorName = 'News Reporter';
+        }
+        
+        // Generate avatar URL based on author name
+        if (authorName && authorName !== 'News Reporter' && authorName.length > 2) {
+            // Use author name for avatar
+            authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=4A90E2&color=fff&size=40&bold=true`;
+        } else {
+            // Use fallback avatar
+            authorAvatar = `https://ui-avatars.com/api/?name=News%20Reporter&background=4A90E2&color=fff&size=40&bold=true`;
+        }
+        
+        return {
+            name: authorName,
+            avatar: authorAvatar
+        };
+        
+    } catch (err) {
+        logError('Failed to extract author', err, { item });
+        // Fallback to generic author
+        return {
+            name: 'News Reporter',
+            avatar: `https://ui-avatars.com/api/?name=News%20Reporter&background=4A90E2&color=fff&size=40&bold=true`
+        };
     }
 };
 
@@ -952,23 +1063,74 @@ const getSidebarCategories = async (req, res) => {
  */
 const getSidebarTrending = async (req, res) => {
     try {
-        const { limit = 4 } = req.query;
+        const { limit = 4, category } = req.query;
         
-        info('Sidebar trending API request received', { limit });
+        info('Sidebar trending API request received', { limit, category });
 
-        // Get trending articles from multiple categories
-        const categories = Object.keys(googleNewsFeeds);
-        const feedUrls = categories.map(cat => googleNewsFeeds[cat]).filter(Boolean);
+        let allArticles = [];
         
-        const articles = await fetchNews(feedUrls, {
-            limit: parseInt(limit),
-            useCache: true,
-            sort: 'desc'
-        });
+        if (category) {
+            // Validate category
+            const validCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+            if (!validCategories.includes(category)) {
+                return error({
+                    code: http_codes.badRequest,
+                    msg: `Invalid category. Available categories: ${validCategories.join(', ')}`,
+                    res,
+                    method: 'getSidebarTrending'
+                });
+            }
+            
+            // Fetch from specific category
+            const feedUrl = googleNewsFeeds[category];
+            if (feedUrl) {
+                try {
+                    const articles = await fetchFeed(feedUrl, category);
+                    allArticles = articles;
+                    debug(`Fetched ${articles.length} trending articles from ${category}`);
+                } catch (err) {
+                    warn('Failed to fetch from category for trending', { category, error: err.message });
+                    return error({
+                        code: http_codes.internalError,
+                        msg: `Failed to fetch trending articles for category: ${category}`,
+                        res,
+                        error: err,
+                        method: 'getSidebarTrending'
+                    });
+                }
+            }
+        } else {
+            // Fetch from design-specific categories (default behavior)
+            const designCategories = ['business', 'technology', 'finance', 'marketing', 'leadership', 'startups'];
+            
+            // Fetch from each category individually to maintain proper category assignment
+            for (const cat of designCategories) {
+                const feedUrl = googleNewsFeeds[cat];
+                if (feedUrl) {
+                    try {
+                        const articles = await fetchFeed(feedUrl, cat);
+                        allArticles.push(...articles);
+                        debug(`Fetched ${articles.length} trending articles from ${cat}`);
+                    } catch (err) {
+                        warn('Failed to fetch from category for trending', { category: cat, error: err.message });
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates and sort
+        const uniqueArticles = removeDuplicates(allArticles);
+        const sortedArticles = sortArticles(uniqueArticles);
+        
+        // Limit results
+        const articles = sortedArticles.slice(0, parseInt(limit));
 
-        const formattedArticles = articles.map((article, index) => ({
-            id: `trending-${index + 1}`,
-            title: truncateText(article.title, 50),
+        // Format like breaking news API with proper unique IDs and category
+        const formattedArticles = articles.map((article) => ({
+            id: article.id,
+            image: article.thumbnail,
+            category: article.category.toUpperCase(),
+            title: article.title,
             publishedAt: article.publishedAt,
             link: article.link,
             source: article.source
@@ -976,10 +1138,7 @@ const getSidebarTrending = async (req, res) => {
 
         return success({
             code: http_codes.ok,
-            data: {
-                trending: formattedArticles,
-                total: formattedArticles.length
-            },
+            data: formattedArticles,
             msg: 'Sidebar trending fetched successfully',
             res
         });
@@ -1214,7 +1373,7 @@ const getArticleDetail = async (req, res) => {
         if (req.query.category) {
             displayCategory = req.query.category.toUpperCase();
         }
-        
+
         const articleDetail = {
             id: id,
             title: article.title,
@@ -1222,7 +1381,7 @@ const getArticleDetail = async (req, res) => {
             content: article.content || article.summary,
             image: article.thumbnail,
             category: displayCategory,
-            author: {
+            author: article.author || {
                 name: article.source,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(article.source)}&background=4A90E2&color=fff&size=40`
             },

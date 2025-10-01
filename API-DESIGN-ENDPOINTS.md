@@ -254,7 +254,48 @@ When using the Article Details API with breaking news IDs, use these category ma
 }
 ```
 
-### 6. Sidebar Categories
+### 6. Trending News API
+**Endpoint:** `GET /api/v1/news/sidebar/trending`
+**Description:** Get trending articles for sidebar with category filtering
+**Query Parameters:**
+- `limit` (optional): Number of articles (default: 4)
+- `category` (optional): Filter by specific category (business, technology, finance, marketing, leadership, startups)
+
+**Response Format:**
+```json
+{
+  "code": 200,
+  "message": "Sidebar trending fetched successfully",
+  "data": [
+    {
+      "id": "mg7jmwio-u096ax",
+      "image": "https://picsum.photos/300/200?random=123456",
+      "category": "BUSINESS",
+      "title": "Trending Article Title",
+      "publishedAt": "2025-10-01T05:26:12.000Z",
+      "link": "https://news.google.com/rss/articles/...",
+      "source": "news.google.com"
+    },
+    {
+      "id": "mg7flyxc-axdkbf",
+      "image": "https://picsum.photos/300/200?random=789012",
+      "category": "TECHNOLOGY",
+      "title": "Another Trending Article",
+      "publishedAt": "2025-10-01T04:15:30.000Z",
+      "link": "https://news.google.com/rss/articles/...",
+      "source": "news.google.com"
+    }
+  ]
+}
+```
+
+**Note:**
+- Response format matches breaking news API exactly
+- Each article has a unique ID for article details API
+- Articles are fetched from design-specific categories only
+- Sorted by publication date (newest first)
+
+### 7. Sidebar Categories
 **Endpoint:** `GET /api/v1/news/sidebar/categories`
 **Description:** Get available categories for sidebar
 **Response Format:**

@@ -178,7 +178,38 @@ curl -X GET "http://localhost:3000/api/v1/news/latest?category=business&limit=8"
 curl -X GET "http://localhost:3000/api/v1/news/latest?category=technology&limit=4"
 ```
 
-### 6. Get News with Category
+### 6. Trending News API
+```bash
+# Get trending articles from all categories (default limit: 4)
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending"
+
+# Get trending articles with custom limit
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?limit=6"
+
+# Get trending articles from specific category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=business"
+
+# Get trending articles from technology category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=technology"
+
+# Get trending articles from finance category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=finance"
+
+# Get trending articles from marketing category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=marketing"
+
+# Get trending articles from leadership category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=leadership"
+
+# Get trending articles from startups category
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=startups"
+
+# Combine category and limit
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=business&limit=8"
+curl -X GET "http://localhost:3000/api/v1/news/sidebar/trending?category=technology&limit=3"
+```
+
+### 7. Get News with Category
 ```bash
 # Technology news
 curl -X GET "http://localhost:3000/api/v1/news?category=technology"
